@@ -87,14 +87,23 @@ DeployGuard is an opinionated **paved road**: one command scaffolds a known-good
 
 ```bash
 brew tap toni7891/deployguard
+brew trust toni7891/deployguard
 brew install deployguard
 ```
 
-Homebrew resolves and installs every dependency automatically — kubectl, helm, minikube, kubeconform, trivy, terraform, infracost, and `dg` itself. After install:
+> **Note:** `brew trust` is required on macOS 27+ (Homebrew's new tap trust model). It's a one-time step per tap.
+
+Homebrew installs kubectl, helm, minikube, kubeconform, infracost, and `dg` automatically. Then add the two third-party taps for terraform and trivy:
 
 ```bash
-brew info deployguard   # see what was installed
-dg doctor               # verify everything is ready
+brew tap hashicorp/tap && brew install hashicorp/tap/terraform
+brew tap aquasecurity/trivy && brew install aquasecurity/trivy/trivy
+```
+
+Verify everything is ready:
+
+```bash
+dg doctor
 ```
 
 ---

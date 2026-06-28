@@ -8,18 +8,16 @@ class Deployguard < Formula
   license "MIT"
   head "https://github.com/toni7891/deployguard.git", branch: "main"
 
-  # Runtime Python deps — generated via `brew extract` or `pip-audit`
   depends_on "python@3.12"
 
-  # All external tool deps — brew handles version resolution
+  # Core toolchain — all from homebrew-core, no extra taps needed
   depends_on "docker" => :recommended
   depends_on "helm"
   depends_on "infracost"
   depends_on "kubeconform"
-  depends_on "kubernetes-cli"   # kubectl
+  depends_on "kubernetes-cli"
   depends_on "minikube"
-  depends_on "hashicorp/tap/terraform"
-  depends_on "aquasecurity/trivy/trivy"
+  # terraform and trivy are third-party taps; install separately (dg doctor will guide you)
 
   # Python package resources — run `brew update-python-resources deployguard` to regenerate
   resource "aiohappyeyeballs" do
