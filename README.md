@@ -1,5 +1,3 @@
-<div align="center">
-
 # 🛡️ DeployGuard
 
 **From `git init` to safely-deployed Kubernetes service in four commands.**
@@ -24,8 +22,6 @@ dg deploy
 ```
 
 *Four commands. No flags to remember. Team config in a committed file.*
-
-</div>
 
 ---
 
@@ -866,10 +862,6 @@ MIT
 
 ---
 
-<div align="center">
-
 **DeployGuard deploys itself — the same way it deploys everything else.**
 
 [Quick Start](#5-minute-local-demo) · [Command Reference](#command-reference) · [Skill](skill/SKILL.md) · [PRD](PRD.md) · [Issues](../../issues)
-
-</div>
