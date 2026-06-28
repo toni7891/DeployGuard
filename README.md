@@ -848,19 +848,6 @@ tests/
 
 ---
 
-## Non-Goals
-
-Explicitly out of scope. If they come up: flag and stop.
-
-- Web UI or Backstage portal
-- Multi-cluster, multi-tenant, RBAC, org-level policy
-- EKS or any managed Kubernetes
-- Second golden path (non-FastAPI)
-- General FinOps platform
-- SaaS features
-
----
-
 ## License
 
 MIT
