@@ -19,7 +19,7 @@ ruleset. Acts as a senior reviewer: every violation explains *why it matters* an
 where Claude Code is running.
 
 ```bash
-pip install deployguard          # if published to PyPI
+pip install dg-deploy            # from PyPI
 # or from the repo:
 pip install -e /path/to/DeployGuard
 ```

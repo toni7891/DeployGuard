@@ -8,7 +8,7 @@ A CLI tool (`dg`) that takes a developer from zero to a safely-deployed FastAPI+
 
 ## Current State
 
-**Phase:** M3 complete. M4 (LLM/MCP) not started.
+**Phase:** M3 complete. Published to PyPI as `dg-deploy` (v0.1.0). M4 (LLM/MCP) not started.
 
 **What exists:**
 - Full CLI: `dg doctor`, `dg init`, `dg cost`, `dg provision`, `dg deploy`, `dg dashboard`

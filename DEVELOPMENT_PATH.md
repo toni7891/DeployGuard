@@ -318,7 +318,7 @@ The SKILL.md must include:
 - Trigger: `/guard`
 - A short description of what it does (1–2 sentences).
 - Instructions for installation: drop this file into `.claude/skills/guard/SKILL.md`.
-- Prerequisites: deployguard package installed (`pip install deployguard`) OR the
+- Prerequisites: deployguard package installed (`pip install dg-deploy`) OR the
   guard module available locally.
 - The full prompt/instructions that Claude follows when the skill is invoked.
 - An example invocation and expected output format.

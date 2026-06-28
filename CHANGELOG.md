@@ -26,6 +26,7 @@ First public release. M0–M3 complete; M4 (LLM/MCP) is stretch/not started.
 - Rich Live precheck panel: live STABLE/GREEN pod counts, health-check status, coloured border on pass/fail
 - Standalone Claude Code skill (`skill/SKILL.md`) — wraps guard module for use inside Claude Code
 - Homebrew formula (`Formula/deployguard.rb`)
+- PyPI package published as `dg-deploy` (`pip install dg-deploy` / `pipx install dg-deploy`)
 - GitHub Actions CI pipeline with coverage gate
 
 ### Infrastructure
