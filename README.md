@@ -8,7 +8,8 @@
 
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-passing-brightgreen)](#testing)
+[![CI](https://github.com/toni7891/DeployGuard/actions/workflows/ci.yaml/badge.svg)](https://github.com/toni7891/DeployGuard/actions/workflows/ci.yaml)
+[![PyPI](https://img.shields.io/pypi/v/deployguard)](https://pypi.org/project/deployguard/)
 [![Built with Typer](https://img.shields.io/badge/CLI-Typer-009688)](https://typer.tiangolo.com/)
 [![Infra: k3s on Spot](https://img.shields.io/badge/infra-k3s%20on%20EC2%20Spot-orange)](https://k3s.io/)
 [![Cost: ~$6/mo](https://img.shields.io/badge/cost-%246%2Fmo%20running-success)](#cost-model)
