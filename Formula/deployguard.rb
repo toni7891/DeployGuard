@@ -270,7 +270,25 @@ class Deployguard < Formula
   end
 
   def install
-    virtualenv_install_with_resources
+    venv = virtualenv_create(libexec, "python3.12")
+
+    resources.each do |r|
+      if r.name == "pydantic-core"
+        # pydantic-core is a Rust extension. Homebrew creates the venv --without-pip
+        # so libexec/bin/pip doesn't exist. Use system Python's pip with --python to
+        # target the venv. Also copy cached wheel to a valid filename (Homebrew prefixes
+        # cache files with a hash that pip rejects as an invalid wheel name).
+        whl = buildpath/File.basename(r.url)
+        cp r.cached_download, whl
+        system Formula["python@3.12"].opt_bin/"python3.12", "-m", "pip",
+               "--python=#{libexec}/bin/python3.12",
+               "install", "--no-deps", "--ignore-installed", whl
+      else
+        venv.pip_install r
+      end
+    end
+
+    venv.pip_install_and_link buildpath
   end
 
   def caveats
