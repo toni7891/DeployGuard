@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # DeployGuard installer — macOS and Linux
-# Usage: curl -fsSL https://raw.githubusercontent.com/your-org/deployguard/main/scripts/install.sh | bash
+# Usage: curl -fsSL https://raw.githubusercontent.com/toni7891/deployguard/main/scripts/install.sh | bash
 set -euo pipefail
 
 BOLD="\033[1m"

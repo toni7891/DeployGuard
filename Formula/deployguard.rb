@@ -2,11 +2,11 @@ class Deployguard < Formula
   include Language::Python::Virtualenv
 
   desc "Scaffold, validate, cost, provision, and deploy services to Kubernetes safely"
-  homepage "https://github.com/your-org/deployguard"
-  url "https://github.com/your-org/deployguard/archive/refs/tags/v0.1.0.tar.gz"
+  homepage "https://github.com/toni7891/deployguard"
+  url "https://github.com/toni7891/deployguard/archive/refs/tags/v0.1.0.tar.gz"
   sha256 "REPLACE_WITH_SHA256_OF_RELEASE_TARBALL"
   license "MIT"
-  head "https://github.com/your-org/deployguard.git", branch: "main"
+  head "https://github.com/toni7891/deployguard.git", branch: "main"
 
   # Runtime Python deps — generated via `brew extract` or `pip-audit`
   depends_on "python@3.12"
@@ -102,7 +102,7 @@ class Deployguard < Formula
       Docker Desktop must be running before provisioning or deploying.
       Install it from: https://docs.docker.com/desktop/install/mac-install/
 
-      Full docs: https://github.com/your-org/deployguard
+      Full docs: https://github.com/toni7891/deployguard
     EOS
   end
 

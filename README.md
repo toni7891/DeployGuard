@@ -88,7 +88,7 @@ DeployGuard is an opinionated **paved road**: one command scaffolds a known-good
 Installs all prerequisites and `dg` in one shot:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/your-org/deployguard/main/scripts/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/toni7891/deployguard/main/scripts/install.sh | bash
 ```
 
 The script:
@@ -100,7 +100,7 @@ The script:
 
 Pin a specific version:
 ```bash
-DEPLOYGUARD_VERSION=0.1.0 curl -fsSL https://raw.githubusercontent.com/your-org/deployguard/main/scripts/install.sh | bash
+DEPLOYGUARD_VERSION=0.1.0 curl -fsSL https://raw.githubusercontent.com/toni7891/deployguard/main/scripts/install.sh | bash
 ```
 
 ---
@@ -108,7 +108,7 @@ DEPLOYGUARD_VERSION=0.1.0 curl -fsSL https://raw.githubusercontent.com/your-org/
 ### Option B — Homebrew tap (macOS, most polished)
 
 ```bash
-brew tap your-org/deployguard
+brew tap toni7891/deployguard
 brew install deployguard
 ```
 
@@ -151,7 +151,7 @@ For Docker: [Docker Desktop](https://docs.docker.com/get-docker/) or `brew insta
 pipx install deployguard
 
 # Or from source
-git clone https://github.com/your-org/deployguard
+git clone https://github.com/toni7891/deployguard
 cd deployguard
 pip install -e ".[dev]"
 ```

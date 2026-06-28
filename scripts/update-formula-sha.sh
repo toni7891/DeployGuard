@@ -12,7 +12,7 @@ if [ -z "$VERSION" ]; then
 fi
 
 BARE="${VERSION#v}"
-URL="https://github.com/your-org/deployguard/archive/refs/tags/${VERSION}.tar.gz"
+URL="https://github.com/toni7891/deployguard/archive/refs/tags/${VERSION}.tar.gz"
 
 echo "Fetching tarball: $URL"
 SHA256="$(curl -fsSL "$URL" | shasum -a 256 | awk '{print $1}')"
