@@ -1,0 +1,6 @@
+name: deployguard
+port: 8080
+replicas: 1
+health_liveness: /healthz
+health_readiness: /readyz
+namespace: deployguard

@@ -1,0 +1,8 @@
+# Copy to terraform.tfvars and fill in your values.
+# Never commit terraform.tfvars — it contains AWS-specific identifiers.
+
+aws_region  = "us-east-1"
+domain_name = "api.example.com"
+zone_id     = "Z1234567890ABCDEF"   # Route 53 hosted zone ID
+key_name    = "deployguard"         # EC2 key pair name (create with: aws ec2 create-key-pair)
+spot_price  = "0.05"
