@@ -158,6 +158,7 @@ def test_get_terraform_output_parses_json(monkeypatch, tmp_path):
         return subprocess.CompletedProcess(cmd, 0, '"1.2.3.4"\n', "")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr("deployguard.provision.aws.shutil.which", lambda _: "/usr/bin/terraform")
     result = _real_get_terraform_output("eip_address", fake_dir)
     assert result == "1.2.3.4"
 

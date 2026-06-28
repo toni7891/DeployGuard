@@ -83,7 +83,23 @@ DeployGuard is an opinionated **paved road**: one command scaffolds a known-good
 
 ## Installation
 
-### Option A — One-liner (macOS + Linux)
+### Option A — Homebrew tap (macOS, recommended)
+
+```bash
+brew tap toni7891/deployguard
+brew install deployguard
+```
+
+Homebrew resolves and installs every dependency automatically — kubectl, helm, minikube, kubeconform, trivy, terraform, infracost, and `dg` itself. After install:
+
+```bash
+brew info deployguard   # see what was installed
+dg doctor               # verify everything is ready
+```
+
+---
+
+### Option B — One-liner (macOS + Linux)
 
 Installs all prerequisites and `dg` in one shot:
 
@@ -101,22 +117,6 @@ The script:
 Pin a specific version:
 ```bash
 DEPLOYGUARD_VERSION=0.1.0 curl -fsSL https://raw.githubusercontent.com/toni7891/deployguard/main/scripts/install.sh | bash
-```
-
----
-
-### Option B — Homebrew tap (macOS, most polished)
-
-```bash
-brew tap toni7891/deployguard
-brew install deployguard
-```
-
-Homebrew resolves and installs every dependency automatically. After install:
-
-```bash
-brew info deployguard   # see what was installed
-dg doctor               # verify
 ```
 
 ---
