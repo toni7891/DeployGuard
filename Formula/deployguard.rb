@@ -8,6 +8,7 @@ class Deployguard < Formula
   license "MIT"
   head "https://github.com/toni7891/deployguard.git", branch: "main"
 
+  depends_on "rust" => :build  # pydantic-core is a Rust extension; needs maturin at build time
   depends_on "python@3.12"
 
   # Core toolchain — all from homebrew-core, no extra taps needed
