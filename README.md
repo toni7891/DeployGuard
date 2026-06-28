@@ -91,7 +91,9 @@ brew trust toni7891/deployguard
 brew install deployguard
 ```
 
-> **Note:** `brew trust` is required on macOS 27+ (Homebrew's new tap trust model). It's a one-time step per tap.
+> **macOS 27:** Homebrew will print a "Tier 2 configuration" warning — this is about macOS 27 being pre-release, not about DeployGuard. Safe to ignore; the install proceeds normally.
+>
+> **`brew trust`** is required on macOS 27+ (Homebrew's new tap trust model). One-time step per tap.
 
 Homebrew installs kubectl, helm, minikube, kubeconform, infracost, and `dg` automatically. Then add the two third-party taps for terraform and trivy:
 
