@@ -8,7 +8,6 @@ class Deployguard < Formula
   license "MIT"
   head "https://github.com/toni7891/deployguard.git", branch: "main"
 
-  depends_on "rust" => :build  # pydantic-core is a Rust extension; needs maturin at build time
   depends_on "python@3.12"
 
   # Core toolchain — all from homebrew-core, no extra taps needed
@@ -156,9 +155,18 @@ class Deployguard < Formula
     sha256 "c40756b57adaa8b1efeeced5c196f3f3b7c435f90e84ea7f443901bec8099ef6"
   end
 
-  resource "pydantic-core" do
-    url "https://files.pythonhosted.org/packages/9d/56/921726b776ace8d8f5db44c4ef961006580d91dc52b803c489fafd1aa249/pydantic_core-2.46.4.tar.gz"
-    sha256 "62f875393d7f270851f20523dd2e29f082bcc82292d66db2b64ea71f64b6e1c1"
+  on_arm do
+    resource "pydantic-core" do
+      url "https://files.pythonhosted.org/packages/19/95/6195171e385007300f0f5574592e467c568becce2d937a0b6804f218bc49/pydantic_core-2.46.4-cp312-cp312-macosx_11_0_arm64.whl"
+      sha256 "962ccbab7b642487b1d8b7df90ef677e03134cf1fd8880bf698649b22a69371f"
+    end
+  end
+
+  on_intel do
+    resource "pydantic-core" do
+      url "https://files.pythonhosted.org/packages/ce/8c/af022f0af448d7747c5154288d46b5f2bc5f17366eaa0e23e9aa04d59f3b/pydantic_core-2.46.4-cp312-cp312-macosx_10_12_x86_64.whl"
+      sha256 "3245406455a5d98187ec35530fd772b1d799b26667980872c8d4614991e2c4a2"
+    end
   end
 
   resource "pydantic-settings" do
