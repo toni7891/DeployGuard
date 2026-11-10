@@ -5,6 +5,7 @@ import sys
 import tempfile
 from pathlib import Path
 
+import yaml
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 from rich.console import Console
 
@@ -15,7 +16,7 @@ from deployguard.manifest import ServiceManifest
 
 console = Console()
 
-_TEMPLATES_DIR = Path(__file__).parent.parent.parent / "templates"
+_TEMPLATES_DIR = Path(__file__).parent.parent / "templates"
 
 _TEMPLATES: list[tuple[str, str]] = [
     ("Dockerfile.j2", "Dockerfile"),
@@ -24,6 +25,7 @@ _TEMPLATES: list[tuple[str, str]] = [
     ("k8s/deployment.yaml.j2", "k8s/deployment.yaml"),
     ("k8s/service.yaml.j2", "k8s/service.yaml"),
     ("k8s/serviceaccount.yaml.j2", "k8s/serviceaccount.yaml"),
+    ("k8s/ingress.yaml.j2", "k8s/ingress.yaml"),
     ("deployguard.yaml.j2", "deployguard.yaml"),
 ]
 
@@ -58,6 +60,9 @@ def _deployment_prompt(ctx: dict, feedback: str | None = None) -> str:
         f"service named '{ctx['name']}' in namespace '{ctx['namespace']}'.\n"
         "Requirements:\n"
         f"- replicas: {ctx['replicas']}\n"
+        f"- spec.selector.matchLabels AND pod template labels exactly: app: {ctx['name']}, "
+        "track: stable (the Service selects on both; canary pods use track: canary)\n"
+        f"- serviceAccountName: {ctx['name']}\n"
         f"- exactly one container, containerPort {ctx['port']}, image tag pinned "
         "(never 'latest')\n"
         "- pod securityContext.runAsNonRoot: true\n"
@@ -90,6 +95,25 @@ def _guard_check_content(content: str, filename: str, config: AppConfig) -> Guar
         return guard(
             tmp, config.guard.rules.as_dict(), run_kubeconform=True, run_trivy=True
         )
+
+
+def _has_stable_labels(content: str, name: str) -> bool:
+    """The Service selects app=<name>,track=stable; an LLM draft without those
+    labels would deploy pods no Service routes to, which guard cannot see."""
+    want = {"app": name, "track": "stable"}
+    try:
+        docs = [d for d in yaml.safe_load_all(content) if isinstance(d, dict)]
+    except yaml.YAMLError:
+        return False
+    for doc in docs:
+        if doc.get("kind") != "Deployment":
+            continue
+        spec = doc.get("spec") or {}
+        selector = (spec.get("selector") or {}).get("matchLabels") or {}
+        labels = ((spec.get("template") or {}).get("metadata") or {}).get("labels") or {}
+        if selector == want and want.items() <= labels.items():
+            return True
+    return False
 
 
 def _try_llm_draft(ctx: dict, config: AppConfig) -> dict[str, str]:
@@ -144,6 +168,13 @@ def _try_llm_draft(ctx: dict, config: AppConfig) -> dict[str, str]:
             )
             return {}
 
+    if not _has_stable_labels(deployment_content, ctx["name"]):
+        console.print(
+            "[yellow]![/yellow] LLM draft is missing the app/track: stable labels the "
+            "Service selects on — using built-in templates."
+        )
+        return {}
+
     console.print("[green]✓[/green] LLM draft passed guard.")
     return {"Dockerfile": dockerfile_content, "k8s/deployment.yaml": deployment_content}
 
@@ -159,6 +190,7 @@ def scaffold_service(
         "health_liveness": manifest.health_liveness,
         "health_readiness": manifest.health_readiness,
         "namespace": manifest.namespace,
+        "host": manifest.host,
     }
 
     env = Environment(

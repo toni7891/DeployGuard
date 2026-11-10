@@ -25,6 +25,7 @@ _EXPECTED_FILES = [
     "k8s/deployment.yaml",
     "k8s/service.yaml",
     "k8s/serviceaccount.yaml",
+    "k8s/ingress.yaml",
     "deployguard.yaml",
 ]
 
@@ -57,6 +58,7 @@ class TestInitUnit:
         manifest = load_manifest(str(tmp_path / _SERVICE_NAME / "deployguard.yaml"))
         assert manifest.name == _SERVICE_NAME
         assert manifest.port == 8000
+        assert manifest.host == f"{_SERVICE_NAME}.local"
 
 
 @pytest.mark.integration
@@ -105,11 +107,12 @@ class TestE2EIntegration:
             f"dg deploy exited {result.returncode}:\n{result.stdout}\n{result.stderr}"
         )
 
-        # 4. assert at least one pod is Running
+        # 4. assert at least one pod is Running in the manifest's namespace
+        namespace = load_manifest(str(service_dir / "deployguard.yaml")).namespace
         pods_result = subprocess.run(
             [
                 "kubectl", "get", "pods",
-                "-n", "default",
+                "-n", namespace,
                 "-l", f"app={_SERVICE_NAME}",
                 "-o", "json",
             ],
@@ -123,4 +126,4 @@ class TestE2EIntegration:
             p for p in pods.get("items", [])
             if p.get("status", {}).get("phase") == "Running"
         ]
-        assert running, f"No Running pods found for {_SERVICE_NAME} in namespace default"
+        assert running, f"No Running pods found for {_SERVICE_NAME} in namespace {namespace}"

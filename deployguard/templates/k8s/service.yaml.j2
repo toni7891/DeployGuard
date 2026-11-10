@@ -5,8 +5,11 @@ metadata:
   namespace: {{ namespace }}
 spec:
   type: ClusterIP
+  # track: stable keeps canary pods (track: canary) out of the stable Service,
+  # otherwise the canary would receive traffic regardless of the canary weight.
   selector:
     app: {{ name }}
+    track: stable
   ports:
   - port: {{ port }}
     targetPort: {{ port }}

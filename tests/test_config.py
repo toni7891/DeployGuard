@@ -141,3 +141,26 @@ def test_reset_config_clears_cache():
     reset_config()
     c2 = get_config()
     assert c1 is not c2
+
+
+# ── deploy.prometheus_url / deploy.smoke_traffic ─────────────────────────────
+
+def test_prometheus_url_unset_by_default(tmp_path: Path):
+    config = load_config(
+        _personal_path=tmp_path / "none.yaml", _project_path=tmp_path / "none2.yaml"
+    )
+    assert config.deploy.prometheus_url is None
+    assert config.deploy.prometheus_url_explicit is False
+    assert config.deploy.effective_prometheus_url == "http://localhost:9090"
+    assert config.deploy.smoke_traffic is True
+
+
+def test_prometheus_url_explicit_from_project_config(tmp_path: Path):
+    project = tmp_path / "project.yaml"
+    project.write_text(yaml.dump({
+        "deploy": {"prometheus_url": "http://prom:9091", "smoke_traffic": False},
+    }))
+    config = load_config(_personal_path=tmp_path / "none.yaml", _project_path=project)
+    assert config.deploy.prometheus_url_explicit is True
+    assert config.deploy.effective_prometheus_url == "http://prom:9091"
+    assert config.deploy.smoke_traffic is False

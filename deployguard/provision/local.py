@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
+from pathlib import Path
 
 from rich.console import Console
 
@@ -11,6 +13,17 @@ console = Console()
 
 _PROFILE = "deployguard"
 _NAMESPACE = "deployguard"
+
+# Request metrics for the `dg deploy` error-rate gate. The minikube ingress
+# addon does not export nginx_ingress_controller_requests unless the
+# controller runs with --enable-metrics=true.
+_INGRESS_NS = "ingress-nginx"
+_INGRESS_DEPLOYMENT = "ingress-nginx-controller"
+_METRICS_FLAG = "--enable-metrics=true"
+
+# Small Prometheus that scrapes the ingress controller (package data).
+PROMETHEUS_MANIFEST = Path(__file__).parent / "prometheus.yaml"
+_MONITORING_NS = "monitoring"
 
 
 def _run(
@@ -52,7 +65,6 @@ def _cluster_running() -> bool:
     )
     if result.returncode != 0:
         return False
-    import json
     try:
         status = json.loads(result.stdout or "{}")
         return status.get("Host", "") == "Running"
@@ -69,12 +81,74 @@ def _ingress_enabled() -> bool:
     )
     if result.returncode != 0:
         return False
-    import json
     try:
         addons = json.loads(result.stdout or "{}")
         return addons.get("ingress", {}).get("Status") == "enabled"
     except (ValueError, TypeError):
         return False
+
+
+def _ingress_controller_args() -> list[str] | None:
+    """Args of the ingress-nginx controller container, or None if unreadable."""
+    result = subprocess.run(
+        ["kubectl", "get", "deployment", _INGRESS_DEPLOYMENT, "-n", _INGRESS_NS, "-o", "json"],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    if result.returncode != 0:
+        return None
+    try:
+        containers = json.loads(result.stdout)["spec"]["template"]["spec"]["containers"]
+        return list(containers[0].get("args") or [])
+    except (ValueError, KeyError, IndexError, TypeError):
+        return None
+
+
+def _enable_ingress_metrics() -> None:
+    """Add --enable-metrics=true to the controller once, then wait for its rollout."""
+    label = "Enabling ingress metrics"
+    args = _ingress_controller_args()
+    if args is None:
+        console.print(f"[red]✗[/red] {label}")
+        raise RuntimeError(
+            f"Could not read deployment/{_INGRESS_DEPLOYMENT} in namespace {_INGRESS_NS}. "
+            "Is the minikube ingress addon enabled?"
+        )
+    if _METRICS_FLAG in args:
+        console.print(f"[green]✓[/green] {label} (already enabled)")
+        return
+    patch = json.dumps([{
+        "op": "add",
+        "path": "/spec/template/spec/containers/0/args/-",
+        "value": _METRICS_FLAG,
+    }])
+    _run(
+        ["kubectl", "patch", "deployment", _INGRESS_DEPLOYMENT, "-n", _INGRESS_NS,
+         "--type=json", "-p", patch],
+        label=label,
+    )
+    _run(
+        ["kubectl", "rollout", "status", f"deployment/{_INGRESS_DEPLOYMENT}",
+         "-n", _INGRESS_NS, "--timeout=180s"],
+        label="Waiting for ingress controller restart",
+        timeout=200,
+    )
+
+
+def _install_prometheus() -> None:
+    """kubectl apply the bundled Prometheus (idempotent) and wait until it is ready."""
+    _run(
+        ["kubectl", "apply", "-f", "-"],
+        label=f"Installing Prometheus ({_MONITORING_NS})",
+        stdin=PROMETHEUS_MANIFEST.read_text(),
+    )
+    _run(
+        ["kubectl", "rollout", "status", "deployment/prometheus",
+         "-n", _MONITORING_NS, "--timeout=180s"],
+        label="Waiting for Prometheus to be ready",
+        timeout=200,
+    )
 
 
 def provision_local(config: AppConfig) -> None:
@@ -126,5 +200,9 @@ def provision_local(config: AppConfig) -> None:
         label=f"Applying namespace '{_NAMESPACE}'",
         stdin=ns_yaml.stdout,
     )
+
+    # ── 5. ingress request metrics + Prometheus (error-rate gate) ────────────
+    _enable_ingress_metrics()
+    _install_prometheus()
 
     console.print(f"\n[bold green]Cluster ready.[/bold green] Run [cyan]dg deploy[/cyan] to ship.\n")

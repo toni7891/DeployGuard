@@ -25,59 +25,6 @@ dg deploy
 
 ---
 
-## Contents
-
-- [Why DeployGuard](#why-deployguard)
-- [How It Works](#how-it-works)
-- [Installation](#installation)
-  - [1. Install prerequisites](#1-install-prerequisites)
-  - [2. Install DeployGuard](#2-install-deployguard)
-  - [3. Verify your setup](#3-verify-your-setup)
-- [5-Minute Local Demo](#5-minute-local-demo)
-- [Command Reference](#command-reference)
-  - [dg doctor](#dg-doctor)
-  - [dg init](#dg-init)
-  - [dg cost](#dg-cost)
-  - [dg provision](#dg-provision)
-  - [dg deploy](#dg-deploy)
-  - [dg dashboard](#dg-dashboard)
-- [Configuration](#configuration)
-  - [Team config (.deployguard/config.yaml)](#team-config-deployguardconfigyaml)
-  - [Personal config (~/.deployguard/config.yaml)](#personal-config-deployguardconfigyaml)
-  - [Service manifest (deployguard.yaml)](#service-manifest-deployguardyaml)
-  - [Config priority order](#config-priority-order)
-- [Cluster Cost Controls](#cluster-cost-controls)
-- [AWS Deployment](#aws-deployment)
-- [Standalone Claude Code Skill](#standalone-claude-code-skill)
-- [Architecture](#architecture)
-- [How It Works (Diagrams)](#how-it-works-diagrams)
-- [Guard Layer](#guard-layer)
-- [Cost Guard](#cost-guard)
-- [Tech Stack](#tech-stack)
-- [Testing](#testing)
-- [Project Structure](#project-structure)
-- [Contributing](#contributing)
-
----
-
-## Why DeployGuard
-
-Deploying a new service to Kubernetes from scratch means writing a Dockerfile, a stack of manifests, a CI pipeline, and infrastructure — each a place to get something subtly wrong:
-
-- No resource limits → one pod starves a node and takes its neighbours down
-- No readiness probes → broken pods receive live traffic
-- `:latest` image tag → silent rollback to stale code
-- IAM wildcard → blast radius of a compromised key is your whole account
-- NAT Gateway added "temporarily" → +$32/mo forever
-
-Today people either copy-paste from an old repo or have an LLM generate it and **ship on hope**. Almost nothing validates AI-drafted infra before it lands in production.
-
-DeployGuard is an opinionated **paved road**: one command scaffolds a known-good stack with hardened configs, one checks what it'll cost before you spend a dollar, one provisions the cluster, and one deploys with a gradual traffic shift that **rolls back automatically if error rates spike**. It validates its own output — the generator is never trusted blindly.
-
-> **The meta story:** DeployGuard deploys itself, the same way it deploys everything else.
-
----
-
 ## Installation
 
 ### Option A — Homebrew tap (macOS, recommended)
@@ -88,41 +35,25 @@ brew trust toni7891/deployguard
 brew install deployguard
 ```
 
-> **macOS 27:** Homebrew will print a "Tier 2 configuration" warning — this is about macOS 27 being pre-release, not about DeployGuard. Safe to ignore; the install proceeds normally.
->
-> **`brew trust`** is required on macOS 27+ (Homebrew's new tap trust model). One-time step per tap.
+> **macOS 27:** `brew trust` is required (new tap trust model). One-time step per tap. Any "Tier 2 configuration" warning is about macOS 27 being pre-release — safe to ignore.
 
-Homebrew installs kubectl, helm, minikube, kubeconform, infracost, and `dg` automatically. Then add the two third-party taps for terraform and trivy:
+Homebrew installs kubectl, helm, minikube, kubeconform, infracost, and `dg` automatically. Then add two third-party taps:
 
 ```bash
 brew tap hashicorp/tap && brew install hashicorp/tap/terraform
 brew tap aquasecurity/trivy && brew install aquasecurity/trivy/trivy
 ```
 
-Verify everything is ready:
-
-```bash
-dg doctor
-```
-
 ---
 
 ### Option B — One-liner (macOS + Linux)
-
-Installs all prerequisites and `dg` in one shot:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/toni7891/deployguard/main/scripts/install.sh | bash
 ```
 
-The script:
-- Detects your OS (macOS / Debian-Ubuntu / RHEL-Fedora)
-- Installs Homebrew if missing (macOS)
-- Installs all external tools: kubectl, helm, minikube, kubeconform, trivy, terraform, infracost
-- Installs `dg` via `pipx` (isolated, no virtualenv management needed)
-- Prints exactly what it did and what to do next
+Detects your OS, installs all prerequisites, and installs `dg` via `pipx`. Pin a version:
 
-Pin a specific version:
 ```bash
 DEPLOYGUARD_VERSION=0.1.0 curl -fsSL https://raw.githubusercontent.com/toni7891/deployguard/main/scripts/install.sh | bash
 ```
@@ -130,10 +61,6 @@ DEPLOYGUARD_VERSION=0.1.0 curl -fsSL https://raw.githubusercontent.com/toni7891/
 ---
 
 ### Option C — Manual
-
-If you prefer to manage tools yourself:
-
-**1. Install prerequisites** (macOS with Homebrew):
 
 ```bash
 # Kubernetes toolchain
@@ -146,23 +73,13 @@ brew install aquasecurity/trivy/trivy
 # Infrastructure + cost
 brew tap hashicorp/tap && brew install hashicorp/tap/terraform
 brew install infracost
+
+# DeployGuard
+pipx install dg-deploy          # recommended — isolated
+# or from source: pip install -e ".[dev]"
 ```
 
-For Docker: [Docker Desktop](https://docs.docker.com/get-docker/) or `brew install --cask docker`.
-
-**Linux:** `dg doctor` shows exact install commands for each missing tool.
-
-**2. Install DeployGuard:**
-
-```bash
-# Recommended — isolated install via pipx
-pipx install dg-deploy
-
-# Or from source
-git clone https://github.com/toni7891/deployguard
-cd deployguard
-pip install -e ".[dev]"
-```
+For Docker: [Docker Desktop](https://docs.docker.com/get-docker/) or `brew install --cask docker`. On Linux, `dg doctor` shows exact install commands for each missing tool.
 
 ---
 
@@ -172,7 +89,7 @@ pip install -e ".[dev]"
 dg doctor
 ```
 
-`dg doctor` checks every prerequisite and validates your config files. Fix anything marked `✗` before continuing. Example output:
+`dg doctor` checks every prerequisite and validates config files. Fix anything marked `✗` before continuing.
 
 ```
 Prerequisites
@@ -195,6 +112,22 @@ Config files
 
 ---
 
+## Why DeployGuard
+
+Deploying a new service to Kubernetes from scratch means writing a Dockerfile, manifests, a CI pipeline, and infrastructure — each a place to get something subtly wrong:
+
+- No resource limits → one pod starves a node and takes its neighbours down
+- No readiness probes → broken pods receive live traffic
+- `:latest` image tag → silent rollback to stale code
+- IAM wildcard → blast radius of a compromised key is your whole account
+- NAT Gateway added "temporarily" → +$32/mo forever
+
+DeployGuard is an opinionated **paved road**: one command scaffolds a known-good stack with hardened configs, one checks what it'll cost before you spend a dollar, one provisions the cluster, and one deploys with a gradual traffic shift that **rolls back automatically if error rates spike**. It validates its own output — the generator is never trusted blindly.
+
+> **The meta story:** DeployGuard deploys itself, the same way it deploys everything else.
+
+---
+
 ## 5-Minute Local Demo
 
 No cloud account required. Runs entirely on your machine.
@@ -202,16 +135,19 @@ No cloud account required. Runs entirely on your machine.
 ```bash
 # 1. Scaffold a new service (validates output before writing)
 dg init payments-api
+cd payments-api
 
 # 2. Check what it'll cost (optional but recommended)
 dg cost
 
-# 3. Bring up a local Kubernetes cluster
+# 3. Bring up a local Kubernetes cluster (minikube + ingress + Prometheus)
 dg provision
 
 # 4. Build, deploy, and watch the canary rollout
 dg deploy
 ```
+
+These four commands are all you need locally. `dg provision` also enables ingress-nginx request metrics and installs a small Prometheus in the `monitoring` namespace, and `dg deploy` port-forwards to it and sends light test traffic through the ingress during the canary steps, so the automatic rollback gate has real error-rate data with no extra setup. No manual `kubectl port-forward`, Prometheus install or request loop needed.
 
 App is live. To open the Kubernetes dashboard:
 
@@ -219,12 +155,7 @@ App is live. To open the Kubernetes dashboard:
 dg dashboard
 ```
 
-That's it. The generated service is at `http://payments-api.local` with:
-- `/healthz` liveness probe
-- `/readyz` readiness probe
-- Resource limits on every container
-- Non-root securityContext
-- Pinned image tag (no `:latest`)
+The generated service runs in the `deployguard` namespace with `/healthz` + `/readyz` probes, resource limits, a non-root securityContext (UID/GID 10001), and a pinned image tag. The guard reports zero errors and zero warnings on the generated manifests.
 
 ---
 
@@ -232,20 +163,7 @@ That's it. The generated service is at `http://payments-api.local` with:
 
 ### `dg doctor`
 
-Validate your machine before doing anything else.
-
-```bash
-dg doctor
-```
-
-Checks:
-- All required binaries are installed and reachable in PATH
-- Python version is 3.11+
-- Docker daemon is running
-- Project config (`.deployguard/config.yaml`) is valid YAML with known keys
-- Personal config (`~/.deployguard/config.yaml`) if present
-
-No flags. Run it first on any new machine.
+Checks all required binaries, Python version, Docker daemon, and config files. No flags. Run first on any new machine.
 
 ---
 
@@ -254,8 +172,7 @@ No flags. Run it first on any new machine.
 Scaffold a hardened FastAPI+Postgres service, then validate the output before writing it.
 
 ```bash
-dg init <name>
-dg init payments-api          # normal usage
+dg init payments-api
 dg init payments-api --no-guard   # skip guard (throwaway spike only — never in CI)
 ```
 
@@ -263,26 +180,19 @@ dg init payments-api --no-guard   # skip guard (throwaway spike only — never i
 
 ```
 payments-api/
-├── Dockerfile               # multi-stage, non-root, pinned base, healthcheck
+├── Dockerfile               # pinned python:3.11-slim base, non-root user (UID/GID 10001)
 ├── app/
-│   └── main.py              # FastAPI app with /healthz and /readyz
+│   ├── main.py              # FastAPI app with /healthz and /readyz
+│   └── requirements.txt
 ├── k8s/
 │   ├── deployment.yaml      # probes, resource limits, securityContext, non-root
-│   ├── service.yaml
-│   └── ingress.yaml
-├── infra/                   # Terraform stub for cloud resources
-├── .github/
-│   └── workflows/ci.yaml    # build → test → scan → push → deploy
-├── .env.example             # referenced secrets (never real values)
-├── deployguard.yaml         # per-service manifest (name, port, health endpoints)
-└── README.md                # generated, with exact commands to provision + deploy
+│   ├── service.yaml         # ClusterIP, selects track: stable pods only
+│   ├── serviceaccount.yaml  # automountServiceAccountToken: false
+│   └── ingress.yaml         # stable nginx Ingress (host <name>.local); required for canary weights
+└── deployguard.yaml         # per-service manifest (name, port, health endpoints, namespace, host)
 ```
 
-The guard layer runs on the generated output — if `dg init` produces a manifest that violates policy, it fails loudly and tells you why before writing anything to disk. The generator is never trusted blindly.
-
-| Flag | Default | Description |
-|---|---|---|
-| `--no-guard` | off | Skip guard validation. Escape hatch for throwaway spikes. Never use in CI. |
+The guard layer runs on the generated output — if `dg init` produces a manifest that violates policy, it fails loudly and tells you why before writing anything to disk.
 
 ---
 
@@ -299,9 +209,7 @@ dg cost --explain     # verbose reasoning per finding
 Three sections:
 1. **What will spin up** — parsed from `terraform show -json` and k8s manifests
 2. **Estimated monthly cost** — running and paused figures from Infracost
-3. **Bill-inflation risks** — hand-rolled cost-policy rules that editorialize about footguns
-
-Example output:
+3. **Bill-inflation risks** — cost-policy rules that editorialize about footguns
 
 ```
 📦 Resources that will spin up
@@ -321,40 +229,23 @@ Example output:
 ✅ Under warn threshold ($10.00). Looks good.
 ```
 
-Thresholds (`warn_threshold`, `reject_threshold`) are in your team config — not flags.
-
-| Flag | Default | Description |
-|---|---|---|
-| `path` | `.` | Path to infra/ directory or Terraform root |
-| `--explain` | off | Verbose reasoning per cost line |
+Thresholds (`warn_threshold`, `reject_threshold`) live in team config — not flags.
 
 ---
 
 ### `dg provision`
 
-Bring up a Kubernetes cluster configured for the golden path. Idempotent — safe to re-run.
+Bring up a Kubernetes cluster. Idempotent — safe to re-run.
 
 ```bash
 dg provision                  # uses target from .deployguard/config.yaml
-dg provision --target local   # override: bring up minikube
-dg provision --target aws     # override: spin up k3s on EC2 Spot via Terraform
+dg provision --target local   # bring up minikube
+dg provision --target aws     # spin up k3s on EC2 Spot via Terraform
 ```
 
-**Local (`target: local`):**
-- Starts minikube with profile `deployguard`
-- Enables ingress addon (`minikube addons enable ingress`)
-- Creates namespace + resource quota
-- No cloud account needed
+**Local:** starts minikube, enables the ingress addon, creates the `deployguard` namespace, enables ingress-nginx request metrics (`--enable-metrics=true` on the controller), and installs a small Prometheus (`prom/prometheus:v2.55.1`, namespace `monitoring`, scrapes the ingress controller every 5s, 1h retention) for the rollback gate. Every step is idempotent. No cloud account needed. If you restart minikube outside DeployGuard, re-run `dg provision` to make sure the metrics flag is still set.
 
-**AWS (`target: aws`):**
-- Runs Terraform in `infra/` to provision k3s on EC2 Spot
-- Public subnet, no NAT Gateway, Elastic IP, security group
-- Same in-cluster config as local once running
-- Run `dg cost` before this — it spins up billable infrastructure
-
-| Flag | Default | Description |
-|---|---|---|
-| `--target` | from config | Override config target for this run (`local` or `aws`) |
+**AWS:** runs Terraform in `infra/` to provision k3s on EC2 Spot — public subnet, no NAT Gateway, Elastic IP. Run `dg cost` first.
 
 ---
 
@@ -363,23 +254,22 @@ dg provision --target aws     # override: spin up k3s on EC2 Spot via Terraform
 Build → push → safe rollout with health checks and automatic rollback.
 
 ```bash
-dg deploy                     # uses target from .deployguard/config.yaml
-dg deploy --target local      # override target for this run
-dg deploy --target aws        # deploy to AWS cluster
+dg deploy
+dg deploy --target local
+dg deploy --target aws
 ```
 
 **What happens:**
-
 1. Build image, tag with git SHA
 2. Push to ECR (aws) or load into minikube (local)
-3. Apply a green deployment, wait for pods to be ready (live Rich panel shows STABLE/GREEN counts)
+3. Apply green deployment, wait for pods ready (live Rich panel)
 4. Smoke test `/readyz` — abort before touching live traffic if it fails
-5. Canary rollout: shift traffic 10% → 50% → 100% via nginx-ingress canary weights
-6. Query Prometheus error rate at each step
-7. If error rate exceeds threshold (default 1%): `kubectl rollout undo` and stop
+5. Canary rollout: 10% → 50% → 100% via nginx-ingress canary weights (10s per step)
+6. Query Prometheus for the canary backend's 5xx rate at each step (no data / Prometheus unreachable = gate inactive, never blocks)
+   - **Local:** `dg deploy` port-forwards to the Prometheus that `dg provision` installed and, while the canary steps run, sends about 10 test requests/second to your service's host through the ingress (`traffic: sending test requests to <host> (local target)`). The test traffic stops before promotion or rollback, and both port-forwards are always closed when `dg deploy` finishes, even on failure. Turn the test traffic off with `deploy.smoke_traffic: false`.
+   - **AWS:** no Prometheus is installed and no test traffic is sent; point `deploy.prometheus_url` at your own Prometheus to enable the gate.
+7. If it exceeds the threshold (default 1%): delete the canary Deployment/Service/Ingress (all traffic back on the untouched stable) and stop
 8. Write audit row (who/what/when/result) to Postgres
-
-Live traffic never sees a broken deployment.
 
 ```
 ● Deploying payments-api (sha: a1b2c3d)
@@ -397,24 +287,14 @@ Live traffic never sees a broken deployment.
 ✅ Deployed. payments-api @ a1b2c3d
 ```
 
-| Flag | Default | Description |
-|---|---|---|
-| `--target` | from config | Override config target for this run (`local` or `aws`) |
-
 ---
 
 ### `dg dashboard`
-
-Open the minikube Kubernetes dashboard in your browser.
 
 ```bash
 dg dashboard          # open browser
 dg dashboard --url    # print URL only (useful in SSH sessions)
 ```
-
-| Flag | Default | Description |
-|---|---|---|
-| `--url` | off | Print dashboard URL instead of opening browser |
 
 ---
 
@@ -422,96 +302,83 @@ dg dashboard --url    # print URL only (useful in SSH sessions)
 
 ### Team config (`.deployguard/config.yaml`)
 
-Commit this. Every teammate runs the same four commands and gets identical behavior — no onboarding doc, no flag choreography.
+Commit this. Every teammate runs the same four commands and gets identical behavior.
 
 ```yaml
-# .deployguard/config.yaml
-
 guard:
-  strict: true                    # true = fail on violations (use true in CI)
-                                  # false = warn only (useful during rapid local dev)
-  explain: true                   # include why-it-matters + what-to-add per violation
+  strict: true
+  explain: true
   rules:
-    require_resource_limits: error   # error | warn | off
+    require_resource_limits: error
     require_probes:          error
     require_security_context: error
     no_latest_tag:           error
     no_root_user:            error
     no_privileged_containers: error
     iam_least_privilege:     warn
-  custom_rules_dir: .deployguard/rules/  # drop .py or .rego rules here; auto-loaded
+  custom_rules_dir: .deployguard/rules/
 
 cost:
   currency: USD
-  warn_threshold:   10.00         # warn if monthly estimate exceeds this
-  reject_threshold: 50.00         # hard stop — fix IaC before provisioning
-  always_explain: false           # true = verbose reasoning on every dg cost run
+  warn_threshold:   10.00
+  reject_threshold: 50.00
+  always_explain: false
 
 deploy:
-  target: local                   # local | aws
-  error_rate_threshold: 1.0       # % — rollback trigger
-  rollout_steps: [10, 50, 100]    # traffic shift steps; tune to team's risk tolerance
-  smoke_timeout: 60               # seconds to wait for /readyz before aborting
-  audit: true                     # write audit rows to Postgres
+  target: local
+  error_rate_threshold: 1.0
+  rollout_steps: [10, 50, 100]
+  smoke_timeout: 60
+  audit: true
+  # prometheus_url: http://prom:9090   # unset = local: managed port-forward to the Prometheus
+  #                                    # `dg provision` installs; aws: http://localhost:9090.
+  #                                    # Unreachable = gate inactive (never blocks).
+  smoke_traffic: true                  # local only: test traffic during canary steps
 ```
 
-All fields are optional — built-in defaults cover a solo dev with no config file at all.
+All fields optional — built-in defaults cover a solo dev with no config file.
 
 ### Personal config (`~/.deployguard/config.yaml`)
 
-Never commit this. Machine-specific settings only — mainly which local LLM model you have pulled.
+Never commit this. Machine-specific settings only.
 
 ```yaml
-# ~/.deployguard/config.yaml
-
 llm:
   backend: local              # local (LM Studio) | bedrock (AWS)
-  model: qwen2.5-coder:14b    # whichever model you have pulled locally
+  model: qwen2.5-coder:14b
   temperature: 0.2
 ```
 
 ### Service manifest (`deployguard.yaml`)
 
-Generated by `dg init`. Lives in your service root. Describes this specific service — not the tool config.
+Generated by `dg init`. Describes this specific service — not the tool config.
 
 ```yaml
-# deployguard.yaml  (generated — edit to match your service)
-
 name: payments-api
 port: 8080
 replicas: 2
 health_liveness:  /healthz
 health_readiness: /readyz
 namespace: deployguard
+host: payments-api.local   # optional; Ingress host, defaults to <name>.local
 ```
-
-`dg deploy` reads this file to know what to build and where to deploy it.
 
 ### Config priority order
 
-Higher wins:
-
 ```
-CLI flag              # single-run override
-  ↓
-project config        # .deployguard/config.yaml  — committed, shared
-  ↓
-personal config       # ~/.deployguard/config.yaml — local machine, not committed
-  ↓
-built-in defaults     # sane out-of-the-box behavior, no config required
+CLI flag  →  project config  →  personal config  →  built-in defaults
 ```
 
-**Flags are escape hatches, not the primary interface.** A flag is only justified when a single run genuinely needs to diverge from the team config.
+Flags are escape hatches. Behavior that applies to a team goes in `.deployguard/config.yaml`.
 
 ### Custom policy rules
 
-Drop `.py` files into `.deployguard/rules/` — they're auto-loaded by the guard engine. No code change, no fork required.
+Drop `.py` files into `.deployguard/rules/` — auto-loaded, no code change required.
 
 ```python
 # .deployguard/rules/require_team_label.py
 
 def check(manifest: dict) -> list[dict]:
-    """Require team label on all workloads."""
     labels = manifest.get("metadata", {}).get("labels", {})
     if "team" not in labels:
         return [{
@@ -537,31 +404,21 @@ make resume   # recreate instance and reattach EIP
 make destroy  # tear down all AWS resources
 ```
 
-`dg cost` derives cost figures from your actual Terraform — estimates stay accurate as you change infra.
-
 ---
 
 ## AWS Deployment
 
-Set `deploy.target: aws` in `.deployguard/config.yaml`, then the same four commands work unchanged. `dg provision` runs the Terraform; `dg deploy` pushes to ECR.
-
-**Before you start:**
+Set `deploy.target: aws` in `.deployguard/config.yaml`, then the same four commands work unchanged.
 
 ```bash
-# AWS credentials in environment
 export AWS_ACCESS_KEY_ID=...
 export AWS_SECRET_ACCESS_KEY=...
 export AWS_DEFAULT_REGION=us-east-1
 
-# Check prerequisites
 dg doctor
-
-# Review what it'll cost before spinning anything up
-dg cost
-
-# Then the same four commands
+dg cost                   # review before spending anything
 dg init payments-api
-dg provision          # spins up k3s on EC2 Spot — billable from here
+dg provision              # spins up k3s on EC2 Spot — billable from here
 dg deploy
 ```
 
@@ -571,15 +428,12 @@ Running cost: ~$6.25/mo (EC2 Spot + RDS micro + Route 53, no NAT Gateway).
 
 ## Standalone Claude Code Skill
 
-The guard layer ships as a standalone Claude Code skill. No cluster, no AWS, no `dg` install — just drop one file.
+The guard layer ships as a standalone Claude Code skill — no cluster, no AWS, no `dg` install.
 
 ```bash
-# Add to any project's Claude skills directory
 mkdir -p .claude/skills/deployguard-guard
 cp /path/to/deployguard/skill/SKILL.md .claude/skills/deployguard-guard/SKILL.md
 ```
-
-Then in Claude Code:
 
 ```
 /guard k8s/deployment.yaml
@@ -587,9 +441,7 @@ Then in Claude Code:
 /guard k8s/
 ```
 
-Runs kubeconform schema validation, trivy image scan, and all 7 policy rules. Each violation explains what failed, why it matters, and exactly what to add.
-
-**Primary use case:** paste an LLM-generated manifest and get a senior reviewer's assessment, not just a linter.
+Runs kubeconform schema validation, trivy image scan, and all 7 policy rules. Each violation explains what failed, why it matters, and exactly what to add. Primary use case: paste an LLM-generated manifest and get a senior reviewer's assessment.
 
 ---
 
@@ -640,13 +492,11 @@ graph LR
     config_mod -.->|read by| llm
 ```
 
-**Architecture rule:** `guard/`, `cost/`, and `engine/` are libraries, not scripts. The CLI, the Claude Code skill, and a future MCP server all import the same modules. Core logic never lives inside CLI handlers.
+`guard/`, `cost/`, and `engine/` are libraries, not scripts. The CLI, the Claude Code skill, and a future MCP server all import the same modules. Core logic never lives inside CLI handlers.
 
 ---
 
-## How It Works (Diagrams)
-
-### Full pipeline
+## How It Works
 
 ```mermaid
 flowchart TD
@@ -673,41 +523,6 @@ flowchart TD
     T -->|error rate > 1%| U[🔄 Auto-rollback + audit record]
     T -->|healthy at each step| V[✅ Deployment complete]
     V --> W[Audit row → Postgres]
-```
-
-### Rollout sequence
-
-```mermaid
-sequenceDiagram
-    participant Dev as Developer
-    participant DG as DeployGuard
-    participant K8s as Kubernetes
-    participant Prom as Prometheus
-    participant DB as Audit Log
-
-    Dev->>DG: dg deploy
-    DG->>K8s: Build + push image (git SHA tag)
-    DG->>K8s: Apply green deployment
-    K8s-->>DG: Pods ready (live panel: STABLE/GREEN counts)
-    DG->>K8s: Smoke test /readyz
-    alt /readyz fails
-        DG->>K8s: Delete green deployment
-        DG-->>Dev: ❌ Abort — live traffic never touched
-    else /readyz passes
-        DG->>K8s: Canary weight = 10%
-        DG->>Prom: Query error rate (PromQL)
-        alt error rate > threshold
-            DG->>K8s: kubectl rollout undo
-            DG->>DB: Write audit row (ROLLED_BACK)
-            DG-->>Dev: 🔄 Auto-rollback complete
-        else healthy
-            DG->>K8s: Canary weight = 50%
-            DG->>Prom: Query error rate
-            DG->>K8s: Canary weight = 100%
-            DG->>DB: Write audit row (SUCCESS)
-            DG-->>Dev: ✅ Deployment complete
-        end
-    end
 ```
 
 ---
@@ -746,62 +561,40 @@ Every violation explains itself:
 
 ---
 
-## Cost Guard
+## Cost Model
 
-| Rule | Default | Description |
+| Rule / State | Default | Notes |
 |---|---|---|
 | NAT Gateway present | reject | +$32/mo + data processing fees |
 | On-demand instead of Spot | warn | 3–5× cost premium |
 | Oversized instance | warn | Relative to golden-path baseline |
 | Load balancer (ALB/NLB) | warn | +$16+/mo each |
 | Uncapped RDS autoscaling | warn | Silent bill inflation |
-| `count`/`for_each` on billable resource | warn | Multiplier on standing cost |
 | Standing resource, no pause path | reject | Must have `make pause` or `make destroy` |
-| Unattached Elastic IP | warn | Small but avoidable |
-
----
-
-## Cost Model
-
-| State | Est. monthly | Notes |
-|---|---|---|
-| Running | ~$6.25 | EC2 Spot + RDS micro + Route 53; no NAT Gateway |
-| Paused | ~$3.55 | Compute stopped; storage + DNS only |
-| Local | $0 | minikube on your machine |
+| **Running** | ~$6.25/mo | EC2 Spot + RDS micro + Route 53; no NAT Gateway |
+| **Paused** | ~$3.55/mo | Compute stopped; storage + DNS only |
+| **Local** | $0 | minikube on your machine |
 
 ---
 
 ## Tech Stack
 
-| Concern | Choice | Why |
-|---|---|---|
-| CLI | Python + Typer | Clean, testable, Python-native |
-| Config / schemas | Pydantic | Typed, validated config for free |
-| Terminal UX | Rich | Live rollout panel — half the demo |
-| Templating | Jinja2 | Standard, transparent output |
-| Manifest validation | kubeconform + trivy + Python policy | Deterministic guard layer |
-| Cost estimation | Infracost JSON + `terraform show -json` | Accurate pricing — wrapped, not reinvented |
-| Deploy engine | Python module + `kubernetes` client | Reusable by CLI, skill, and MCP server |
-| Metrics | Prometheus HTTP API (PromQL) | Rollout watches error rate per step |
-| Audit | SQLAlchemy → Postgres | Persisted audit trail |
-| Local cluster | minikube + ingress addon | Simpler than Helm ingress-nginx on local |
-| Prod cluster | k3s on EC2 Spot, no NAT Gateway | ~$3–5/mo |
-| Registry | ECR | Already in the AWS toolchain |
-| CI/CD | GitHub Actions | `dg deploy` called from the pipeline |
-| LLM (stretch) | LM Studio (local) or AWS Bedrock | Switchable by one config line |
-
----
-
-## Milestone Status
-
-| Milestone | Status | Description |
-|---|---|---|
-| M-1 Guard skill | ✅ Done | Standalone module + SKILL.md |
-| M0 Spine | ✅ Done | init → provision → deploy end-to-end |
-| M1 Harden + cost | ✅ Done | Hardened templates, guard in init, dg cost, full config |
-| M2 Deploy engine | ✅ Done | Gradual rollout, Prometheus gate, auto-rollback, audit |
-| M3 AWS + self-deploy | ✅ Done | ECR, k3s on Spot, GitHub Actions CI, self-deploy |
-| M4 LLM + MCP | 🚧 In progress | LM Studio adapter working; Bedrock + MCP server pending |
+| Concern | Choice |
+|---|---|
+| CLI | Python + Typer |
+| Config / schemas | Pydantic |
+| Terminal UX | Rich (live rollout panel) |
+| Templating | Jinja2 |
+| Manifest validation | kubeconform + trivy + Python policy rules |
+| Cost estimation | Infracost JSON + `terraform show -json` |
+| Deploy engine | Python module + `kubernetes` client |
+| Metrics | Prometheus HTTP API (PromQL) |
+| Audit | SQLAlchemy → Postgres |
+| Local cluster | minikube + ingress addon |
+| Prod cluster | k3s on EC2 Spot, no NAT Gateway |
+| Registry | ECR |
+| CI/CD | GitHub Actions |
+| LLM (stretch) | LM Studio (local) or AWS Bedrock |
 
 ---
 
@@ -811,7 +604,7 @@ Every violation explains itself:
 pip install -e ".[dev]"
 
 pytest                              # full suite
-pytest tests/test_guard.py          # guard + policy unit tests (asserts on explanation text)
+pytest tests/test_guard.py          # guard + policy unit tests
 pytest tests/test_smoke_e2e.py      # spine test — must always pass
 pytest tests/test_cost.py           # cost policy rules
 pytest tests/test_config.py         # config priority order + schema validation
@@ -838,9 +631,9 @@ skill/
 └── SKILL.md             # standalone Claude skill — wraps guard/
 infra/                   # Terraform: k3s on EC2 Spot (no NAT Gateway)
 tests/
-├── test_guard.py        # feeds bad manifests, asserts rejection + explanation text
-├── test_cost.py         # feeds footgun Terraform, asserts risk flagged
-├── test_config.py       # priority order, schema validation, custom rules
+├── test_guard.py
+├── test_cost.py
+├── test_config.py
 └── test_smoke_e2e.py    # spine test — must always pass
 ```
 
@@ -853,6 +646,19 @@ tests/
 3. Core logic stays in libraries (`guard/`, `cost/`, `engine/`) — not in CLI handlers.
 4. Conventional commits, one vertical slice per PR, cross-lane review.
 5. Flags are escape hatches — if it can live in config, it goes in config.
+
+---
+
+## Milestone Status
+
+| Milestone | Status | Description |
+|---|---|---|
+| M-1 Guard skill | ✅ Done | Standalone module + SKILL.md |
+| M0 Spine | ✅ Done | init → provision → deploy end-to-end |
+| M1 Harden + cost | ✅ Done | Hardened templates, guard in init, dg cost, full config |
+| M2 Deploy engine | ✅ Done | Gradual rollout, Prometheus gate, auto-rollback, audit |
+| M3 AWS + self-deploy | ✅ Done | ECR, k3s on Spot, GitHub Actions CI, self-deploy |
+| M4 LLM + MCP | 🚧 In progress | LM Studio adapter working; Bedrock + MCP server pending |
 
 ---
 

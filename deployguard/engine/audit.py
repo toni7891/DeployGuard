@@ -3,13 +3,16 @@ from __future__ import annotations
 
 import os
 import subprocess
-import warnings
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Generator
 
 from sqlalchemy import JSON, DateTime, Integer, String, Text, create_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, MappedColumn, Session, mapped_column
+from rich.console import Console
+from rich.markup import escape
+
+console = Console()
 
 
 # ── ORM model ─────────────────────────────────────────────────────────────────
@@ -81,16 +84,13 @@ def try_write_audit(
     rollout_steps: list | None = None,
     operator: str | None = None,
 ) -> None:
-    """Best-effort audit write — logs a warning and continues on any failure.
+    """Best-effort audit write — prints one dim status line and continues on any failure.
 
-    Pass database_url=None to skip silently (DATABASE_URL not configured).
+    Pass database_url=None to skip (DATABASE_URL not configured). A missing or
+    broken database must never fail a deploy, so nothing is raised.
     """
     if not database_url:
-        warnings.warn(
-            "DATABASE_URL not set — audit record skipped. "
-            "Set DATABASE_URL to enable audit logging.",
-            stacklevel=2,
-        )
+        console.print("[dim]audit: skipped (DATABASE_URL not set)[/dim]")
         return
 
     fields = {
@@ -109,7 +109,7 @@ def try_write_audit(
         with get_db_session(database_url) as session:
             write_audit(session, **fields)
     except Exception as exc:
-        warnings.warn(
-            f"Audit write failed (non-blocking): {exc}",
-            stacklevel=2,
+        detail = (str(exc).strip().splitlines() or [type(exc).__name__])[0][:120]
+        console.print(
+            f"[dim]audit: skipped (write failed: {escape(detail)})[/dim]", soft_wrap=True
         )

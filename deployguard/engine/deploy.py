@@ -15,14 +15,19 @@ from deployguard.config import AppConfig
 from deployguard.engine.audit import try_write_audit
 from deployguard.engine.ecr import push_to_ecr
 from deployguard.engine.metrics import get_error_rate
+from deployguard.engine.portforward import prometheus_endpoint
 from deployguard.engine.precheck import run_precheck
 from deployguard.engine.rollout import make_prometheus_checker, rollback, rollout_traffic
+from deployguard.engine.traffic import smoke_traffic
 from deployguard.guard import format_result, guard
 from deployguard.manifest import ServiceManifest
 
 console = Console()
 
 _CLUSTER_NAME = "deployguard"
+# How long to wait for the first test requests to show up in Prometheus
+# (5s scrape interval on the local install) before calling the gate inactive.
+_METRICS_WARMUP_SECONDS = 20.0
 
 
 # ── Private helpers (monkeypatch-friendly) ─────────────────────────────────────
@@ -36,47 +41,54 @@ def _git_sha() -> str:
     return result.stdout.strip() if result.returncode == 0 else "local"
 
 
+_BUILD_LOG_TAIL = 40
+
+
+def _run_docker_build(image_ref: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["docker", "build", "-t", image_ref, "."],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+
+
 def _build_image(name: str, tag: str) -> None:
+    """docker build with a single spinner line; the log is shown only on failure."""
     if not shutil.which("docker"):
         raise RuntimeError(
             "docker not found. Install Docker Desktop and run `dg doctor` to verify."
         )
     image_ref = f"{name}:{tag}"
-    console.print(f"[dim]Building {image_ref}...[/dim]")
-    try:
-        proc_ctx = subprocess.Popen(
-            ["docker", "build", "-t", image_ref, "."],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-        )
-    except FileNotFoundError:
-        raise RuntimeError(
-            "docker not found. Install Docker Desktop and run `dg doctor` to verify."
-        )
-    with proc_ctx as proc:
-        assert proc.stdout is not None
-        for line in proc.stdout:
-            console.print(f"  [dim]{line.rstrip()}[/dim]")
-        proc.wait()
-        if proc.returncode != 0:
-            raise RuntimeError(f"docker build failed (exit {proc.returncode})")
+    with console.status(f"[dim]Building {image_ref}...[/dim]"):
+        try:
+            result = _run_docker_build(image_ref)
+        except FileNotFoundError:
+            raise RuntimeError(
+                "docker not found. Install Docker Desktop and run `dg doctor` to verify."
+            )
+    if result.returncode != 0:
+        tail = "\n".join((result.stdout or "").rstrip().splitlines()[-_BUILD_LOG_TAIL:])
+        console.print(f"[red]✗[/red] Build {image_ref} failed")
+        if tail:
+            console.print(tail, markup=False, highlight=False)
+        raise RuntimeError(f"docker build failed (exit {result.returncode}):\n{tail}")
     console.print(f"[green]✓[/green] Built {image_ref}")
 
 
 def _load_image_local(image_ref: str) -> None:
     if not shutil.which("minikube"):
         raise RuntimeError("minikube not found. Install: brew install minikube")
-    console.print(f"[dim]Loading {image_ref} into minikube...[/dim]")
-    try:
-        result = subprocess.run(
-            ["minikube", "image", "load", image_ref, "--profile", _CLUSTER_NAME],
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
-    except FileNotFoundError:
-        raise RuntimeError("minikube not found. Install: brew install minikube")
+    with console.status(f"[dim]Loading {image_ref} into minikube...[/dim]"):
+        try:
+            result = subprocess.run(
+                ["minikube", "image", "load", image_ref, "--profile", _CLUSTER_NAME],
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+        except FileNotFoundError:
+            raise RuntimeError("minikube not found. Install: brew install minikube")
     if result.returncode != 0:
         detail = (result.stderr or result.stdout or "").strip()
         raise RuntimeError(f"minikube image load failed:\n{detail}")
@@ -102,25 +114,40 @@ def _stable_deployment_exists(name: str, namespace: str) -> bool:
     return result.returncode == 0
 
 
-def _apply_stable(manifest: ServiceManifest, k8s_dir: str, target: str) -> None:
-    """Apply k8s manifests with the new image as the stable deployment (first-deploy path)."""
+def _load_k8s_docs(k8s_dir: str) -> list[dict]:
     docs: list[dict] = []
     for path in sorted(Path(k8s_dir).glob("*.yaml")):
         for doc in yaml.safe_load_all(path.read_text()):
-            if doc is None:
-                continue
-            if doc.get("kind") == "Deployment":
-                containers = (
-                    doc.get("spec", {})
-                    .get("template", {})
-                    .get("spec", {})
-                    .get("containers", [])
-                )
-                for c in containers:
-                    c["image"] = manifest.image or manifest.name
-                    if target == "local":
-                        c["imagePullPolicy"] = "Never"
-            docs.append(doc)
+            if isinstance(doc, dict):
+                docs.append(doc)
+    return docs
+
+
+def _stable_deployment_doc(k8s_dir: str, name: str) -> dict | None:
+    """The guard-checked stable Deployment from k8s/, which the canary is cloned from."""
+    for doc in _load_k8s_docs(k8s_dir):
+        if doc.get("kind") == "Deployment" and (doc.get("metadata") or {}).get("name") == name:
+            return doc
+    return None
+
+
+def _apply_stable(manifest: ServiceManifest, k8s_dir: str, target: str) -> None:
+    """Apply every k8s/*.yaml (Deployment, Service, ServiceAccount, Ingress) with
+    the new image as the stable deployment (first-deploy path)."""
+    docs: list[dict] = []
+    for doc in _load_k8s_docs(k8s_dir):
+        if doc.get("kind") == "Deployment":
+            containers = (
+                doc.get("spec", {})
+                .get("template", {})
+                .get("spec", {})
+                .get("containers", [])
+            )
+            for c in containers:
+                c["image"] = manifest.image or manifest.name
+                if target == "local":
+                    c["imagePullPolicy"] = "Never"
+        docs.append(doc)
 
     combined = yaml.dump_all(docs, default_flow_style=False)
     apply = subprocess.run(
@@ -166,7 +193,7 @@ def deploy(manifest: ServiceManifest, config: AppConfig) -> bool:
 
     Returns True on successful promotion, False if pre-check failed or rollback
     was triggered (either by Prometheus threshold or by the on_step callback).
-    On unhandled exceptions: calls rollback() then re-raises.
+    On unhandled exceptions: calls rollback() (removes canary resources) then re-raises.
     """
     target = config.deploy.target
     database_url = os.environ.get("DATABASE_URL") if config.deploy.audit else None
@@ -243,9 +270,25 @@ def deploy(manifest: ServiceManifest, config: AppConfig) -> bool:
             console.print("[bold green]✓ First deploy complete.[/bold green]\n")
             success = True
         else:
-            # 6b. Gradual rollout with Prometheus error-rate gate
-            on_step = make_prometheus_checker(manifest, config)
-            success = rollout_traffic(manifest, config, on_step=on_step)
+            # 6b. Gradual rollout with Prometheus error-rate gate. On the local
+            # target both context managers port-forward into the cluster
+            # (Prometheus, ingress) and always clean up on exit; test traffic
+            # is stopped by rollout_traffic before rollback/promotion.
+            with prometheus_endpoint(config) as prom_url, \
+                    smoke_traffic(manifest, config) as traffic:
+                on_step = make_prometheus_checker(
+                    manifest,
+                    config,
+                    prometheus_url=prom_url,
+                    wait_for_data=_METRICS_WARMUP_SECONDS if traffic else 0.0,
+                )
+                success = rollout_traffic(
+                    manifest,
+                    config,
+                    on_step=on_step,
+                    stable_deployment=_stable_deployment_doc(k8s_dir, manifest.name),
+                    after_steps=traffic.stop if traffic else None,
+                )
 
         if not success:
             console.print(

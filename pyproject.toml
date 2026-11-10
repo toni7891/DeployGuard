@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "dg-deploy"
-version = "0.1.0"
+version = "0.1.1"
 requires-python = ">=3.11"
 description = "From git init to safely-deployed Kubernetes service in four commands."
 readme = "README.md"
@@ -49,6 +49,9 @@ dev = [
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["deployguard*"]
+
+[tool.setuptools.package-data]
+deployguard = ["templates/**/*", "provision/*.yaml"]
 
 [tool.pytest.ini_options]
 markers = [

@@ -8,6 +8,7 @@ from typing import Annotated
 import typer
 from pydantic import ValidationError
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
 
 from deployguard.config import get_config, load_config, validate_config_file
@@ -265,6 +266,7 @@ def cost(
         run_cost_rules,
         run_infracost,
     )
+    from deployguard.cost.infracost import InfracostUnavailable
 
     config = get_config()
 
@@ -278,6 +280,8 @@ def cost(
     infracost_result: dict = {}
     try:
         infracost_result = run_infracost(path)
+    except InfracostUnavailable as exc:
+        console.print(f"[yellow]{escape(str(exc))}[/yellow]", soft_wrap=True)
     except RuntimeError as exc:
         console.print(f"[yellow]![/yellow] {exc} — cost estimates will be omitted.")
 

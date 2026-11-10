@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-import socket
 import subprocess
 import threading
 import time
@@ -17,6 +16,9 @@ from rich.panel import Panel
 from rich.table import Table
 
 from deployguard.config import AppConfig
+# Shared port-forward helpers; re-exported here so tests can monkeypatch them
+# on this module.
+from deployguard.engine.portforward import _free_port, _open_port_forward  # noqa: F401
 from deployguard.manifest import ServiceManifest
 
 console = Console()
@@ -38,6 +40,14 @@ def _patch_green_manifests(manifest: ServiceManifest, k8s_dir: Path) -> str:
                 continue
             if doc.get("kind") == "Deployment":
                 doc["metadata"]["name"] = f"{manifest.name}-green"
+                # track: green keeps these unverified pods out of the stable
+                # Service (selector app + track: stable) and away from the
+                # stable Deployment's selector.
+                spec = doc.setdefault("spec", {})
+                green = {"app": manifest.name, "track": "green"}
+                spec["selector"] = {"matchLabels": dict(green)}
+                pod_meta = spec.setdefault("template", {}).setdefault("metadata", {})
+                pod_meta["labels"] = {**(pod_meta.get("labels") or {}), **green}
                 containers = (
                     doc.get("spec", {})
                     .get("template", {})
@@ -59,10 +69,6 @@ def _run_kubectl(
     return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, input=stdin)
 
 
-def _open_port_forward(cmd: list[str]) -> subprocess.Popen:
-    return subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-
 def _http_get(url: str, timeout: float = 5.0) -> requests.Response:
     return requests.get(url, timeout=timeout)
 
@@ -78,12 +84,6 @@ def _delete_green(name: str, namespace: str) -> None:
 
 def _sleep(seconds: float) -> None:
     time.sleep(seconds)
-
-
-def _free_port() -> int:
-    with socket.socket() as s:
-        s.bind(("", 0))
-        return s.getsockname()[1]
 
 
 def _get_pod_counts(name: str, namespace: str) -> tuple[int, int]:

@@ -1,6 +1,7 @@
 """Tests for engine/deploy.py — full sequence, precheck failure, rollback, exception."""
 from __future__ import annotations
 
+import contextlib
 import importlib
 import subprocess
 
@@ -18,6 +19,8 @@ from deployguard.manifest import ServiceManifest
 # Import the module object directly — avoids the function/submodule name collision
 # that occurs when deployguard.engine.__init__ re-exports a symbol named "deploy".
 _mod = importlib.import_module("deployguard.engine.deploy")
+_REAL_APPLY_STABLE = _mod._apply_stable  # captured before the autouse fixture patches it
+_ORIGINAL_BUILD = _mod._build_image
 
 
 @pytest.fixture()
@@ -71,6 +74,21 @@ def _patch_infra(monkeypatch):
     fake_pf = MM()
     fake_pf.wait.return_value = None
     monkeypatch.setattr(_precheck_mod, "_open_port_forward", lambda cmd: fake_pf)
+    # managed port-forwards / test traffic — never touch a real cluster
+    monkeypatch.setattr(_mod, "prometheus_endpoint", _fake_prometheus_endpoint)
+    monkeypatch.setattr(_mod, "smoke_traffic", _fake_smoke_traffic(None))
+
+
+@contextlib.contextmanager
+def _fake_prometheus_endpoint(config):
+    yield "http://localhost:9090"
+
+
+def _fake_smoke_traffic(gen):
+    @contextlib.contextmanager
+    def _cm(manifest, config):
+        yield gen
+    return _cm
 
 
 # ── Success path ───────────────────────────────────────────────────────────────
@@ -238,3 +256,123 @@ def test_deploy_aws_calls_push_not_load(monkeypatch, manifest):
     deploy(manifest, cfg)
     assert push_called == [True]
     assert load_called == []
+
+
+# ── First deploy applies every scaffolded k8s/ file, including the Ingress ────
+
+def test_first_deploy_applies_scaffolded_ingress(monkeypatch, tmp_path, config):
+    import yaml
+
+    from deployguard.scaffold import init as _init
+
+    monkeypatch.setattr(_init, "get_adapter", lambda c: None)
+    _init.scaffold_service("payments-api", str(tmp_path), config, no_guard=True)
+    k8s_dir = tmp_path / "payments-api" / "k8s"
+
+    applied: list[str] = []
+
+    def _run(cmd, input=None, **kw):
+        if input:
+            applied.append(input)
+        return subprocess.CompletedProcess(cmd, 0, "", "")
+
+    monkeypatch.setattr(_mod.subprocess, "run", _run)
+    m = ServiceManifest(name="payments-api", image="payments-api:abc1234")
+    _REAL_APPLY_STABLE(m, str(k8s_dir), "local")
+
+    docs = list(yaml.safe_load_all(applied[0]))
+    kinds = sorted(d["kind"] for d in docs)
+    assert kinds == ["Deployment", "Ingress", "Service", "ServiceAccount"]
+    dep = next(d for d in docs if d["kind"] == "Deployment")
+    assert dep["spec"]["template"]["spec"]["containers"][0]["imagePullPolicy"] == "Never"
+
+    stable = _mod._stable_deployment_doc(str(k8s_dir), "payments-api")
+    assert stable["spec"]["template"]["metadata"]["labels"]["track"] == "stable"
+
+
+# ── Managed Prometheus endpoint + test traffic on the canary path ─────────────
+
+def test_canary_path_uses_managed_prometheus_and_stops_traffic(monkeypatch, manifest, config):
+    monkeypatch.setattr(_mod, "run_precheck", lambda m, c, **kw: PreCheckResult(passed=True))
+
+    @contextlib.contextmanager
+    def _endpoint(cfg):
+        yield "http://localhost:23456"
+
+    class _Gen:
+        stopped = 0
+
+        def stop(self):
+            self.stopped += 1
+
+    gen = _Gen()
+    monkeypatch.setattr(_mod, "prometheus_endpoint", _endpoint)
+    monkeypatch.setattr(_mod, "smoke_traffic", _fake_smoke_traffic(gen))
+    checker_kw: dict = {}
+    monkeypatch.setattr(
+        _mod, "make_prometheus_checker",
+        lambda m, c, **kw: checker_kw.update(kw) or (lambda i, w: True),
+    )
+    rollout_kw: dict = {}
+
+    def _rollout(m, c, on_step, **kw):
+        rollout_kw.update(kw)
+        kw["after_steps"]()
+        return True
+
+    monkeypatch.setattr(_mod, "rollout_traffic", _rollout)
+
+    assert deploy(manifest, config) is True
+    assert checker_kw["prometheus_url"] == "http://localhost:23456"
+    assert checker_kw["wait_for_data"] > 0
+    assert gen.stopped == 1
+
+
+def test_canary_path_without_traffic_does_not_wait(monkeypatch, manifest, config):
+    monkeypatch.setattr(_mod, "run_precheck", lambda m, c, **kw: PreCheckResult(passed=True))
+    checker_kw: dict = {}
+    monkeypatch.setattr(
+        _mod, "make_prometheus_checker",
+        lambda m, c, **kw: checker_kw.update(kw) or (lambda i, w: True),
+    )
+    rollout_kw: dict = {}
+    monkeypatch.setattr(
+        _mod, "rollout_traffic",
+        lambda m, c, on_step, **kw: rollout_kw.update(kw) or True,
+    )
+    assert deploy(manifest, config) is True
+    assert checker_kw["wait_for_data"] == 0.0
+    assert rollout_kw["after_steps"] is None
+
+
+# ── Quiet docker build ─────────────────────────────────────────────────────────
+
+def test_build_prints_single_line_on_success(monkeypatch, capsys):
+    monkeypatch.setattr(_mod.shutil, "which", lambda name: "/usr/bin/" + name)
+    noisy = "\n".join(f"#{i} buildkit noise docker-desktop://x" for i in range(30))
+    monkeypatch.setattr(
+        _mod, "_run_docker_build",
+        lambda ref: subprocess.CompletedProcess(["docker"], 0, noisy, None),
+    )
+    _ORIGINAL_BUILD("payments-api", "abc1234")
+    out = capsys.readouterr().out
+    assert "✓ Built payments-api:abc1234" in out
+    assert "buildkit noise" not in out
+    assert "docker-desktop://" not in out
+
+
+def test_build_failure_shows_log_tail_and_raises(monkeypatch, capsys):
+    monkeypatch.setattr(_mod.shutil, "which", lambda name: "/usr/bin/" + name)
+    log = "\n".join(f"line {i}" for i in range(100)) + "\nERROR: pip install failed"
+    monkeypatch.setattr(
+        _mod, "_run_docker_build",
+        lambda ref: subprocess.CompletedProcess(["docker"], 1, log, None),
+    )
+    with pytest.raises(RuntimeError, match=r"docker build failed \(exit 1\)") as exc:
+        _ORIGINAL_BUILD("payments-api", "abc1234")
+    assert "ERROR: pip install failed" in str(exc.value)
+    assert "line 10\n" not in str(exc.value), "only the tail is kept"
+    out = capsys.readouterr().out
+    assert "ERROR: pip install failed" in out
+    assert "line 70" in out
+    assert "line 50\n" not in out

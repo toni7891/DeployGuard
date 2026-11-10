@@ -1,0 +1,21 @@
+# Stable Ingress. ingress-nginx only honours the canary Ingress that
+# `dg deploy` creates (<name>-canary, same host and path) when this main
+# Ingress exists, so do not remove it or change host/path independently.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ name }}
+  namespace: {{ namespace }}
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: {{ host }}
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: {{ name }}
+            port:
+              number: {{ port }}

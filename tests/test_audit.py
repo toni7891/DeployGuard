@@ -95,11 +95,14 @@ def test_get_db_session_creates_table_and_yields_session():
 
 # ── try_write_audit ────────────────────────────────────────────────────────────
 
-def test_try_write_audit_warns_when_no_database_url():
+def test_try_write_audit_prints_one_line_when_no_database_url(capsys):
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         try_write_audit(None, **_sample_fields())
-    assert any("DATABASE_URL" in str(w.message) for w in caught)
+    out = capsys.readouterr().out
+    assert out.strip() == "audit: skipped (DATABASE_URL not set)"
+    # No raw Python warning (which would print file:line + a source snippet)
+    assert caught == []
 
 
 def test_try_write_audit_writes_row_with_valid_url():
@@ -109,14 +112,17 @@ def test_try_write_audit_writes_row_with_valid_url():
         pass
 
 
-def test_try_write_audit_warns_on_bad_url():
+def test_try_write_audit_prints_one_line_on_bad_url(capsys):
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
         try_write_audit(
             "postgresql://nonexistent:5432/nodb",
             **_sample_fields(),
         )
-    assert any("Audit write failed" in str(w.message) for w in caught)
+    out = capsys.readouterr().out.strip()
+    assert out.startswith("audit: skipped (write failed:")
+    assert "\n" not in out
+    assert not any("audit" in str(w.message).lower() for w in caught)
 
 
 def test_try_write_audit_does_not_raise_on_bad_url():

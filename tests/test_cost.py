@@ -113,3 +113,69 @@ def test_real_infra_pause_reduces_cost():
     assert "instance_count=0" in makefile, (
         "Makefile pause target must pass -var='instance_count=0' to drop EC2 cost"
     )
+
+
+# ── infracost non-interactive behaviour ────────────────────────────────────────
+# A fake `infracost` on PATH stands in for the real binary, so no login or
+# network call is ever attempted.
+
+import os
+import time
+
+from deployguard.cost.infracost import AUTH_MESSAGE, InfracostUnavailable
+
+
+def _fake_infracost(tmp_path, monkeypatch, body: str) -> None:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    script = bin_dir / "infracost"
+    script.write_text("#!/bin/sh\n" + body + "\n")
+    script.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+
+
+def test_infracost_login_prompt_is_stopped_fast(tmp_path, monkeypatch):
+    # Simulates the OAuth flow: prints a login prompt, then waits forever.
+    _fake_infracost(tmp_path, monkeypatch, 'echo "You need to log in to Infracost" >&2; sleep 30')
+    start = time.monotonic()
+    with pytest.raises(InfracostUnavailable) as exc:
+        run_infracost(str(tmp_path))
+    assert str(exc.value) == AUTH_MESSAGE
+    assert time.monotonic() - start < 10
+
+
+def test_infracost_stdin_is_closed(tmp_path, monkeypatch):
+    # `read` returns immediately at EOF; with an open stdin it would block.
+    _fake_infracost(tmp_path, monkeypatch, 'read x; echo \'{"totalMonthlyCost": "1.00"}\'')
+    assert run_infracost(str(tmp_path), timeout=10) == {"totalMonthlyCost": "1.00"}
+
+
+@pytest.mark.parametrize("text", [
+    "Error: no associated organization for this user",
+    "Error: not authenticated",
+])
+def test_infracost_auth_errors_map_to_short_message(tmp_path, monkeypatch, text):
+    _fake_infracost(tmp_path, monkeypatch, f'echo "{text}" >&2; exit 1')
+    with pytest.raises(InfracostUnavailable, match="needs a login or organization"):
+        run_infracost(str(tmp_path))
+
+
+def test_infracost_timeout(tmp_path, monkeypatch):
+    _fake_infracost(tmp_path, monkeypatch, "sleep 30")
+    with pytest.raises(InfracostUnavailable, match="did not finish within 1s"):
+        run_infracost(str(tmp_path), timeout=1)
+
+
+def test_dg_cost_prints_one_line_and_resource_table(tmp_path, monkeypatch):
+    from typer.testing import CliRunner
+
+    from deployguard.cli import app
+
+    _fake_infracost(tmp_path, monkeypatch, 'echo "Error: no associated organization" >&2; exit 1')
+    (tmp_path / "main.tf").write_text('resource "aws_eip" "ip" {}\n')
+    monkeypatch.chdir(tmp_path)
+    result = CliRunner().invoke(app, ["cost", str(tmp_path)])
+    assert AUTH_MESSAGE in result.output
+    assert result.output.count("Cost estimate unavailable") == 1
+    assert "What will spin up" in result.output
+    assert "aws_eip" in result.output

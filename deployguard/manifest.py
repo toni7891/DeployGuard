@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, ValidationError, field_validator
+from pydantic import BaseModel, ValidationError, field_validator, model_validator
 
 
 class ServiceManifest(BaseModel):
@@ -14,7 +14,11 @@ class ServiceManifest(BaseModel):
     health_liveness: str = "/healthz"
     health_readiness: str = "/readyz"
     image: str | None = None
-    namespace: str = "default"
+    # Matches the namespace `dg provision` creates (local and aws).
+    namespace: str = "deployguard"
+    # Ingress host shared by the stable and canary Ingress. ingress-nginx only
+    # honours canary weights when both Ingresses use the same host and path.
+    host: str | None = None
 
     @field_validator("name")
     @classmethod
@@ -34,6 +38,12 @@ class ServiceManifest(BaseModel):
         if not (1 <= v <= 65535):
             raise ValueError(f"port {v} must be between 1 and 65535")
         return v
+
+    @model_validator(mode="after")
+    def default_host(self) -> "ServiceManifest":
+        if not self.host:
+            self.host = f"{self.name}.local"
+        return self
 
 
 def load_manifest(path: str = "deployguard.yaml") -> ServiceManifest:

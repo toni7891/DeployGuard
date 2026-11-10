@@ -11,6 +11,8 @@ from deployguard.config import AppConfig
 from deployguard.engine import PreCheckResult, run_precheck
 from deployguard.manifest import ServiceManifest
 
+_REAL_PATCH_GREEN = _mod._patch_green_manifests  # captured before the autouse fixture patches it
+
 
 @pytest.fixture()
 def manifest():
@@ -104,3 +106,23 @@ def test_precheck_success(monkeypatch, manifest, config):
 
     result = run_precheck(manifest, config, k8s_dir=None)
     assert result == PreCheckResult(passed=True, reason=None)
+
+
+def test_green_pods_are_not_selected_by_stable_service(manifest, tmp_path):
+    import yaml
+
+    from deployguard.scaffold import init as _init
+
+    _init.scaffold_service("payments-api", str(tmp_path), AppConfig(), no_guard=True)
+    k8s_dir = tmp_path / "payments-api" / "k8s"
+    docs = list(yaml.safe_load_all(_REAL_PATCH_GREEN(manifest, k8s_dir)))
+    green = next(d for d in docs if d["kind"] == "Deployment")
+    svc = next(d for d in docs if d["kind"] == "Service")
+    labels = green["spec"]["template"]["metadata"]["labels"]
+
+    assert green["metadata"]["name"] == "payments-api-green"
+    assert green["spec"]["selector"]["matchLabels"] == {"app": "payments-api", "track": "green"}
+    assert green["spec"]["selector"]["matchLabels"].items() <= labels.items()
+    assert not svc["spec"]["selector"].items() <= labels.items()
+    # hardening carried over unchanged
+    assert green["spec"]["template"]["spec"]["securityContext"]["runAsUser"] == 10001

@@ -15,6 +15,9 @@ import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 
+DEFAULT_PROMETHEUS_URL = "http://localhost:9090"
+
+
 # ── Sub-models ────────────────────────────────────────────────────────────────
 
 class LLMConfig(BaseModel):
@@ -66,6 +69,23 @@ class DeployConfig(BaseModel):
     rollout_steps: list[int] = Field(default_factory=lambda: [10, 50, 100])
     smoke_timeout: int = 60
     audit: bool = True
+    # Prometheus HTTP API base URL for the error-rate gate. Unset (None) means
+    # "managed": on the local target `dg deploy` port-forwards to the
+    # Prometheus that `dg provision` installs; elsewhere it falls back to
+    # DEFAULT_PROMETHEUS_URL. Use effective_prometheus_url to read it.
+    prometheus_url: str | None = None
+    # Local target only: send light test traffic through the ingress during
+    # the canary steps so the error-rate gate has data to gate on.
+    smoke_traffic: bool = True
+
+    @property
+    def prometheus_url_explicit(self) -> bool:
+        """True when the user set deploy.prometheus_url (config file or flag)."""
+        return self.prometheus_url is not None
+
+    @property
+    def effective_prometheus_url(self) -> str:
+        return self.prometheus_url or DEFAULT_PROMETHEUS_URL
 
 
 class AppConfig(BaseModel):
